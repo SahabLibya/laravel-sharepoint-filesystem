@@ -337,8 +337,8 @@ class SharePointAdapter implements FilesystemAdapter
 
             $drivePrefix = $this->driveId ? "/drives/{$this->driveId}" : '/drive';
             $parentReference = empty($parentPath)
-                ? ['path' => "{$drivePrefix}/root"]
-                : ['path' => "{$drivePrefix}/root/{$parentPath}"];
+                ? ['path' => "{$drivePrefix}/root:"]
+                : ['path' => "{$drivePrefix}/root:/{$parentPath}"];
 
             $endpoint = $this->baseUrl.$this->getBasePath($source).':/copy';
 

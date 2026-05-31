@@ -6,6 +6,8 @@ composer.lock
 .idea/
 .vscode/
 .cursor/
+.agents/
+skills-lock.json
 *.sublime-project
 *.sublime-workspace
 .DS_Store

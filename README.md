@@ -15,6 +15,8 @@ A Laravel filesystem driver for SharePoint and OneDrive using Microsoft Graph AP
 - ✅ **Laravel 10, 11, 12** - Compatible with modern Laravel versions
 - ✅ **Flysystem v3** - Built on the latest Flysystem architecture
 - ✅ **Large File Support** - Optimized for files up to 250MB
+- ✅ **Safe Copy & Move** - Monitors Microsoft Graph copy jobs before completing moves
+- ✅ **Path-Safe Operations** - Handles spaces, special characters, and Unicode file names
 - ✅ **Production Ready** - Battle-tested in real-world applications
 - ✅ **Spatie Backup Compatible** - Perfect for automated backups to SharePoint
 
@@ -96,6 +98,10 @@ SHAREPOINT_DRIVE_ID=your-drive-id
 
 # Optional: Prefix path within the drive
 SHAREPOINT_PREFIX=backups
+
+# Optional: Tune Microsoft Graph async copy monitoring
+SHAREPOINT_COPY_MONITOR_TIMEOUT=300
+SHAREPOINT_COPY_MONITOR_INTERVAL_MS=1000
 ```
 
 ### Step 6: Register Filesystem Disk
@@ -113,6 +119,8 @@ Add the SharePoint disk to your `config/filesystems.php`:
         'tenant_id' => env('GRAPH_TENANT_ID', 'common'),
         'drive_id' => env('SHAREPOINT_DRIVE_ID'), // Optional
         'prefix' => env('SHAREPOINT_PREFIX', ''), // Optional
+        'copy_monitor_timeout' => env('SHAREPOINT_COPY_MONITOR_TIMEOUT', 300),
+        'copy_monitor_interval_ms' => env('SHAREPOINT_COPY_MONITOR_INTERVAL_MS', 1000),
         'throw' => false,
     ],
 ],
@@ -279,6 +287,17 @@ The package also supports OneDrive for Business. Use the `onedrive` driver:
 
 Access tokens are automatically cached for 58 minutes (tokens typically expire in 60 minutes). The cache key is unique per disk configuration, allowing multiple SharePoint/OneDrive connections with independent token management.
 
+### Copy Monitoring
+
+Microsoft Graph copy operations run asynchronously. This package waits for Graph's copy monitor to report completion before `copy()` returns. Because `move()` uses copy followed by delete, the source file is only deleted after the copy is confirmed complete.
+
+You can tune the monitor wait behavior per disk:
+
+```php
+'copy_monitor_timeout' => 300, // seconds
+'copy_monitor_interval_ms' => 1000, // milliseconds
+```
+
 ## 🐛 Troubleshooting
 
 ### Permission Errors
@@ -390,9 +409,9 @@ Route::get('/test-sharepoint', function () {
 | `createDirectory()` | ✅ | Create directory |
 | `fileExists()` | ✅ | Check if file exists |
 | `directoryExists()` | ✅ | Check if directory exists |
-| `listContents()` | ✅ | List directory contents |
-| `move()` | ✅ | Move/rename file |
-| `copy()` | ✅ | Copy file |
+| `listContents()` | ✅ | List directory contents with Graph pagination |
+| `move()` | ✅ | Move/rename file after monitored copy completion |
+| `copy()` | ✅ | Copy file with Graph monitor polling |
 | `lastModified()` | ✅ | Get last modified timestamp |
 | `fileSize()` | ✅ | Get file size |
 | `mimeType()` | ✅ | Get MIME type |

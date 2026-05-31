@@ -20,6 +20,7 @@ use League\Flysystem\UnableToReadFile;
 use League\Flysystem\UnableToRetrieveMetadata;
 use League\Flysystem\UnableToSetVisibility;
 use League\Flysystem\UnableToWriteFile;
+use RuntimeException;
 use Throwable;
 
 class SharePointAdapter implements FilesystemAdapter
@@ -28,38 +29,19 @@ class SharePointAdapter implements FilesystemAdapter
 
     private string $baseUrl = 'https://graph.microsoft.com/v1.0';
 
+    private int $copyMonitorTimeout;
+
+    private int $copyMonitorIntervalMs;
+
     public function __construct(
         private string $accessToken,
         private ?string $driveId = null,
-        string $prefix = ''
+        string $prefix = '',
+        array $options = [],
     ) {
         $this->prefixer = new PathPrefixer($prefix);
-    }
-
-    private function getBasePath(string $path): string
-    {
-        $path = $this->prefixer->prefixPath($path);
-
-        if ($this->driveId) {
-            return "/drives/{$this->driveId}/root:/{$path}";
-        }
-
-        return "/me/drive/root:/{$path}";
-    }
-
-    private function getChildrenPath(string $path): string
-    {
-        $path = $this->prefixer->prefixPath($path);
-
-        if ($this->driveId) {
-            return empty($path) || $path === '/'
-                ? "/drives/{$this->driveId}/root/children"
-                : "/drives/{$this->driveId}/root:/{$path}:/children";
-        }
-
-        return empty($path) || $path === '/'
-            ? '/me/drive/root/children'
-            : "/me/drive/root:/{$path}:/children";
+        $this->copyMonitorTimeout = max(1, (int) ($options['copy_monitor_timeout'] ?? 300));
+        $this->copyMonitorIntervalMs = max(0, (int) ($options['copy_monitor_interval_ms'] ?? 1000));
     }
 
     public function fileExists(string $path): bool
@@ -87,15 +69,15 @@ class SharePointAdapter implements FilesystemAdapter
     public function write(string $path, string $contents, Config $config): void
     {
         try {
-            $endpoint = $this->baseUrl.$this->getBasePath($path).':/content';
-            // Increase timeout for large files (5 minutes)
+            $endpoint = $this->baseUrl.$this->driveItemPath($path).':/content';
+
             $response = Http::withToken($this->accessToken)
                 ->timeout(300)
                 ->withBody($contents, 'application/octet-stream')
                 ->put($endpoint);
 
             if ($response->failed()) {
-                throw new \RuntimeException('Failed to write file: '.$response->body());
+                throw new RuntimeException('Failed to write file: '.$response->body());
             }
         } catch (Throwable $exception) {
             throw UnableToWriteFile::atLocation($path, $exception->getMessage(), $exception);
@@ -105,22 +87,23 @@ class SharePointAdapter implements FilesystemAdapter
     public function writeStream(string $path, $contents, Config $config): void
     {
         try {
-            // For large files, we need to read the stream properly without loading all into memory at once
             if (is_resource($contents)) {
-                $endpoint = $this->baseUrl.$this->getBasePath($path).':/content';
-                // Increase timeout for large files (5 minutes)
+                $endpoint = $this->baseUrl.$this->driveItemPath($path).':/content';
+
                 $response = Http::withToken($this->accessToken)
                     ->timeout(300)
                     ->withBody($contents, 'application/octet-stream')
                     ->put($endpoint);
 
                 if ($response->failed()) {
-                    throw new \RuntimeException('Failed to write file: '.$response->body());
+                    throw new RuntimeException('Failed to write file: '.$response->body());
                 }
-            } else {
-                $stream = $contents instanceof Stream ? $contents : new Stream($contents);
-                $this->write($path, $stream->getContents(), $config);
+
+                return;
             }
+
+            $stream = $contents instanceof Stream ? $contents : new Stream($contents);
+            $this->write($path, $stream->getContents(), $config);
         } catch (Throwable $exception) {
             throw UnableToWriteFile::atLocation($path, $exception->getMessage(), $exception);
         }
@@ -129,12 +112,12 @@ class SharePointAdapter implements FilesystemAdapter
     public function read(string $path): string
     {
         try {
-            $endpoint = $this->baseUrl.$this->getBasePath($path).':/content';
+            $endpoint = $this->baseUrl.$this->driveItemPath($path).':/content';
             $response = Http::withToken($this->accessToken)
                 ->get($endpoint);
 
             if ($response->failed()) {
-                throw new \RuntimeException('Failed to read file: '.$response->body());
+                throw new RuntimeException('Failed to read file: '.$response->body());
             }
 
             return $response->body();
@@ -160,12 +143,12 @@ class SharePointAdapter implements FilesystemAdapter
     public function delete(string $path): void
     {
         try {
-            $endpoint = $this->baseUrl.$this->getBasePath($path);
+            $endpoint = $this->baseUrl.$this->driveItemPath($path);
             $response = Http::withToken($this->accessToken)
                 ->delete($endpoint);
 
             if ($response->failed()) {
-                throw new \RuntimeException('Failed to delete file: '.$response->body());
+                throw new RuntimeException('Failed to delete file: '.$response->body());
             }
         } catch (Throwable $exception) {
             throw UnableToDeleteFile::atLocation($path, $exception->getMessage(), $exception);
@@ -175,12 +158,12 @@ class SharePointAdapter implements FilesystemAdapter
     public function deleteDirectory(string $path): void
     {
         try {
-            $endpoint = $this->baseUrl.$this->getBasePath($path);
+            $endpoint = $this->baseUrl.$this->driveItemPath($path);
             $response = Http::withToken($this->accessToken)
                 ->delete($endpoint);
 
             if ($response->failed()) {
-                throw new \RuntimeException('Failed to delete directory: '.$response->body());
+                throw new RuntimeException('Failed to delete directory: '.$response->body());
             }
         } catch (Throwable $exception) {
             throw UnableToDeleteDirectory::atLocation($path, $exception->getMessage(), $exception);
@@ -190,18 +173,12 @@ class SharePointAdapter implements FilesystemAdapter
     public function createDirectory(string $path, Config $config): void
     {
         try {
-            $path = $this->prefixer->prefixPath($path);
-            $parts = explode('/', trim($path, '/'));
+            $prefixedPath = $this->prefixedPath($path);
+            $parts = explode('/', trim($prefixedPath, '/'));
             $folderName = array_pop($parts);
             $parentPath = implode('/', $parts);
 
-            $endpoint = $this->driveId
-                ? (empty($parentPath)
-                    ? "{$this->baseUrl}/drives/{$this->driveId}/root/children"
-                    : "{$this->baseUrl}/drives/{$this->driveId}/root:/{$parentPath}:/children")
-                : (empty($parentPath)
-                    ? "{$this->baseUrl}/me/drive/root/children"
-                    : "{$this->baseUrl}/me/drive/root:/{$parentPath}:/children");
+            $endpoint = $this->baseUrl.$this->childrenPath($parentPath, true);
 
             $response = Http::withToken($this->accessToken)
                 ->post($endpoint, [
@@ -211,7 +188,7 @@ class SharePointAdapter implements FilesystemAdapter
                 ]);
 
             if ($response->failed()) {
-                throw new \RuntimeException('Failed to create directory: '.$response->body());
+                throw new RuntimeException('Failed to create directory: '.$response->body());
             }
         } catch (Throwable $exception) {
             throw UnableToCreateDirectory::dueToFailure($path, $exception);
@@ -236,7 +213,7 @@ class SharePointAdapter implements FilesystemAdapter
             $path,
             $metadata['size'] ?? null,
             null,
-            $metadata['lastModifiedDateTime'] ?? null,
+            $this->lastModifiedTimestamp($metadata),
             $metadata['file']['mimeType'] ?? null
         );
     }
@@ -244,11 +221,8 @@ class SharePointAdapter implements FilesystemAdapter
     public function lastModified(string $path): FileAttributes
     {
         $metadata = $this->getMetadata($path);
-        $timestamp = isset($metadata['lastModifiedDateTime'])
-            ? strtotime($metadata['lastModifiedDateTime'])
-            : null;
 
-        return new FileAttributes($path, null, null, $timestamp);
+        return new FileAttributes($path, null, null, $this->lastModifiedTimestamp($metadata));
     }
 
     public function fileSize(string $path): FileAttributes
@@ -261,56 +235,48 @@ class SharePointAdapter implements FilesystemAdapter
     public function listContents(string $path, bool $deep): iterable
     {
         try {
-            $endpoint = $this->baseUrl.$this->getChildrenPath($path);
-            $response = Http::withToken($this->accessToken)
-                ->get($endpoint);
+            $endpoint = $this->baseUrl.$this->childrenPath($path);
 
-            if ($response->failed()) {
-                return;
-            }
+            while ($endpoint) {
+                $response = Http::withToken($this->accessToken)
+                    ->get($endpoint);
 
-            $items = $response->json()['value'] ?? [];
-
-            foreach ($items as $item) {
-                // Fix path construction to properly handle path prefixes
-                $parentPath = $item['parentReference']['path'] ?? '';
-                $itemName = $item['name'] ?? '';
-                
-                // Extract the relative path from the parent reference
-                if (preg_match('/root:(.*)/', $parentPath, $matches)) {
-                    $relativePath = trim($matches[1], '/');
-                    $itemPath = $relativePath ? $relativePath.'/'.$itemName : $itemName;
-                } else {
-                    $itemPath = $itemName;
+                if ($response->failed()) {
+                    return;
                 }
-                
-                $itemPath = $this->prefixer->stripPrefix($itemPath);
 
-                if (isset($item['folder'])) {
-                    yield new DirectoryAttributes(
-                        $itemPath,
-                        null,
-                        isset($item['lastModifiedDateTime'])
-                            ? strtotime($item['lastModifiedDateTime'])
-                            : null
-                    );
+                $payload = $response->json();
+                $items = $payload['value'] ?? [];
 
-                    if ($deep) {
-                        yield from $this->listContents($itemPath, true);
+                foreach ($items as $item) {
+                    $itemPath = $this->pathFromListItem($item);
+
+                    if (isset($item['folder'])) {
+                        yield new DirectoryAttributes(
+                            $itemPath,
+                            null,
+                            $this->lastModifiedTimestamp($item)
+                        );
+
+                        if ($deep) {
+                            yield from $this->listContents($itemPath, true);
+                        }
+
+                        continue;
                     }
-                } else {
+
                     yield new FileAttributes(
                         $itemPath,
                         $item['size'] ?? null,
                         null,
-                        isset($item['lastModifiedDateTime'])
-                            ? strtotime($item['lastModifiedDateTime'])
-                            : null,
+                        $this->lastModifiedTimestamp($item),
                         $item['file']['mimeType'] ?? null
                     );
                 }
+
+                $endpoint = $payload['@odata.nextLink'] ?? null;
             }
-        } catch (Throwable $exception) {
+        } catch (Throwable) {
             return;
         }
     }
@@ -328,19 +294,17 @@ class SharePointAdapter implements FilesystemAdapter
     public function copy(string $source, string $destination, Config $config): void
     {
         try {
-            $source = $this->prefixer->prefixPath($source);
-            $destination = $this->prefixer->prefixPath($destination);
-
-            $parts = explode('/', trim($destination, '/'));
+            $prefixedDestination = $this->prefixedPath($destination);
+            $parts = explode('/', trim($prefixedDestination, '/'));
             $newName = array_pop($parts);
             $parentPath = implode('/', $parts);
 
-            $drivePrefix = $this->driveId ? "/drives/{$this->driveId}" : '/drive';
-            $parentReference = empty($parentPath)
-                ? ['path' => "{$drivePrefix}/root"]
-                : ['path' => "{$drivePrefix}/root/{$parentPath}"];
+            if ($newName === null || $newName === '') {
+                throw new RuntimeException('The copy destination must include a file or folder name.');
+            }
 
-            $endpoint = $this->baseUrl.$this->getBasePath($source).':/copy';
+            $parentReference = $this->parentReferenceForCopy($parentPath);
+            $endpoint = $this->baseUrl.$this->driveItemPath($source).':/copy';
 
             $response = Http::withToken($this->accessToken)
                 ->withHeaders(['Content-Type' => 'application/json'])
@@ -350,27 +314,200 @@ class SharePointAdapter implements FilesystemAdapter
                 ]);
 
             if ($response->failed()) {
-                throw new \RuntimeException('Failed to copy file: '.$response->body());
+                throw new RuntimeException('Failed to copy file: '.$response->body());
             }
+
+            if ($response->status() !== 202) {
+                throw new RuntimeException('Failed to copy file: expected a 202 Accepted response.');
+            }
+
+            $monitorUrl = $response->header('Location');
+
+            if (! is_string($monitorUrl) || $monitorUrl === '') {
+                throw new RuntimeException('Failed to copy file: missing copy monitor URL.');
+            }
+
+            $this->monitorCopyOperation($monitorUrl);
         } catch (Throwable $exception) {
             throw UnableToCopyFile::fromLocationTo($source, $destination, $exception);
         }
     }
 
-    private function getMetadata(string $path): array
+    private function getMetadata(string $path, bool $pathIsPrefixed = false): array
     {
         try {
-            $endpoint = $this->baseUrl.$this->getBasePath($path);
+            $endpoint = $this->baseUrl.$this->driveItemPath($path, $pathIsPrefixed);
             $response = Http::withToken($this->accessToken)
                 ->get($endpoint);
 
             if ($response->failed()) {
-                throw new \RuntimeException('Failed to get metadata: '.$response->body());
+                throw new RuntimeException('Failed to get metadata: '.$response->body());
             }
 
             return $response->json();
         } catch (Throwable $exception) {
             throw UnableToRetrieveMetadata::create($path, 'metadata', $exception->getMessage(), $exception);
         }
+    }
+
+    private function driveRootPath(): string
+    {
+        if ($this->driveId) {
+            return "/drives/{$this->driveId}/root";
+        }
+
+        return '/me/drive/root';
+    }
+
+    private function driveItemPath(string $path, bool $pathIsPrefixed = false): string
+    {
+        $encodedPath = $this->encodedPath($path, $pathIsPrefixed);
+
+        if ($encodedPath === '') {
+            return $this->driveRootPath();
+        }
+
+        return $this->driveRootPath().':/'.$encodedPath;
+    }
+
+    private function childrenPath(string $path, bool $pathIsPrefixed = false): string
+    {
+        $encodedPath = $this->encodedPath($path, $pathIsPrefixed);
+
+        if ($encodedPath === '') {
+            return $this->driveRootPath().'/children';
+        }
+
+        return $this->driveRootPath().':/'.$encodedPath.':/children';
+    }
+
+    private function prefixedPath(string $path): string
+    {
+        return $this->normalizePath($this->prefixer->prefixPath($path));
+    }
+
+    private function encodedPath(string $path, bool $pathIsPrefixed = false): string
+    {
+        $normalizedPath = $pathIsPrefixed
+            ? $this->normalizePath($path)
+            : $this->prefixedPath($path);
+
+        if ($normalizedPath === '') {
+            return '';
+        }
+
+        $segments = array_map(
+            static fn (string $segment): string => rawurlencode($segment),
+            explode('/', $normalizedPath)
+        );
+
+        return implode('/', $segments);
+    }
+
+    private function normalizePath(string $path): string
+    {
+        $path = str_replace('\\', '/', $path);
+        $segments = array_values(array_filter(
+            explode('/', $path),
+            static fn (string $segment): bool => $segment !== ''
+        ));
+
+        return implode('/', $segments);
+    }
+
+    private function parentReferenceForCopy(string $prefixedParentPath): array
+    {
+        $metadata = $this->getMetadata($prefixedParentPath, true);
+        $parentId = $metadata['id'] ?? null;
+        $driveId = $this->driveId
+            ?? ($metadata['parentReference']['driveId'] ?? null)
+            ?? ($metadata['remoteItem']['parentReference']['driveId'] ?? null);
+
+        if (! is_string($parentId) || $parentId === '') {
+            throw new RuntimeException('Failed to copy file: destination parent folder is missing an id.');
+        }
+
+        if (! is_string($driveId) || $driveId === '') {
+            throw new RuntimeException('Failed to copy file: destination parent folder is missing a driveId.');
+        }
+
+        return [
+            'driveId' => $driveId,
+            'id' => $parentId,
+        ];
+    }
+
+    private function monitorCopyOperation(string $monitorUrl): void
+    {
+        $deadline = microtime(true) + $this->copyMonitorTimeout;
+
+        while (true) {
+            $response = Http::withToken($this->accessToken)
+                ->get($monitorUrl);
+
+            if ($response->failed()) {
+                throw new RuntimeException('Failed to monitor copy operation: '.$response->body());
+            }
+
+            $payload = $response->json();
+            $status = strtolower((string) ($payload['status'] ?? ''));
+
+            if ($status === 'completed') {
+                return;
+            }
+
+            if ($status === 'failed') {
+                throw new RuntimeException('Failed to copy file: '.$this->copyMonitorErrorMessage($payload));
+            }
+
+            if ($status === '') {
+                throw new RuntimeException('Failed to monitor copy operation: missing status.');
+            }
+
+            if (microtime(true) >= $deadline) {
+                throw new RuntimeException('Timed out while waiting for copy operation to complete.');
+            }
+
+            if ($this->copyMonitorIntervalMs > 0) {
+                usleep($this->copyMonitorIntervalMs * 1000);
+            }
+        }
+    }
+
+    private function copyMonitorErrorMessage(array $payload): string
+    {
+        $message = $payload['error']['message'] ?? null;
+
+        if (is_string($message) && $message !== '') {
+            return $message;
+        }
+
+        return 'the Microsoft Graph copy monitor reported failure.';
+    }
+
+    private function pathFromListItem(array $item): string
+    {
+        $parentPath = $item['parentReference']['path'] ?? '';
+        $itemName = $item['name'] ?? '';
+
+        if (preg_match('/root:(.*)/', (string) $parentPath, $matches)) {
+            $relativePath = trim(rawurldecode($matches[1]), '/');
+            $itemPath = $relativePath ? $relativePath.'/'.$itemName : $itemName;
+        } else {
+            $itemPath = (string) $itemName;
+        }
+
+        return $this->prefixer->stripPrefix($this->normalizePath($itemPath));
+    }
+
+    private function lastModifiedTimestamp(array $metadata): ?int
+    {
+        if (! isset($metadata['lastModifiedDateTime'])) {
+            return null;
+        }
+
+        $timestamp = strtotime((string) $metadata['lastModifiedDateTime']);
+
+        return $timestamp === false ? null : $timestamp;
     }
 }

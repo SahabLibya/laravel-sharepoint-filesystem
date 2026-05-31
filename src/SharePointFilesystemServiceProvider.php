@@ -40,7 +40,8 @@ class SharePointFilesystemServiceProvider extends ServiceProvider
             $adapter = new SharePointAdapter(
                 $accessToken,
                 $config['drive_id'] ?? null,
-                $config['prefix'] ?? ''
+                $config['prefix'] ?? '',
+                $this->adapterOptions($config)
             );
 
             return new FilesystemAdapter(
@@ -57,7 +58,8 @@ class SharePointFilesystemServiceProvider extends ServiceProvider
             $adapter = new SharePointAdapter(
                 $accessToken,
                 $config['drive_id'] ?? null,
-                $config['prefix'] ?? ''
+                $config['prefix'] ?? '',
+                $this->adapterOptions($config)
             );
 
             return new FilesystemAdapter(
@@ -111,5 +113,15 @@ class SharePointFilesystemServiceProvider extends ServiceProvider
             return $data['access_token'];
         });
     }
-}
 
+    /**
+     * Build adapter options from disk configuration.
+     */
+    private function adapterOptions(array $config): array
+    {
+        return [
+            'copy_monitor_timeout' => $config['copy_monitor_timeout'] ?? 300,
+            'copy_monitor_interval_ms' => $config['copy_monitor_interval_ms'] ?? 1000,
+        ];
+    }
+}

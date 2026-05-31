@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Added configurable Microsoft Graph copy monitor timeout and polling interval options.
 - Added mocked Pest tests for path encoding, prefixes, copy monitoring, move safety, pagination, and metadata timestamps.
-- Added GitHub Actions test matrix for supported PHP and Laravel versions.
+- Added GitHub Actions test matrix for current secure PHP and Laravel dependency combinations.
 
 ### Fixed
 - Added the missing Guzzle HTTP client dependency required by Laravel's HTTP client on Laravel 10.

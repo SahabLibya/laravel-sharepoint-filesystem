@@ -55,7 +55,11 @@ jobs:
             "illuminate/support:${{ matrix.illuminate }}" \
             "illuminate/filesystem:${{ matrix.illuminate }}" \
             "illuminate/http:${{ matrix.illuminate }}" \
+            --no-update \
+            --no-interaction
+          composer require \
             "orchestra/testbench:${{ matrix.testbench }}" \
+            --dev \
             --no-update \
             --no-interaction
 

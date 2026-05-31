@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added GitHub Actions test matrix for supported PHP and Laravel versions.
 
 ### Fixed
+- Added the missing Guzzle HTTP client dependency required by Laravel's HTTP client on Laravel 10.
 - Fixed Microsoft Graph path construction to encode path segments safely.
 - Fixed prefixed disk handling so prefixes are not applied twice.
 - Fixed copy and move behavior to wait for Microsoft Graph async copy completion before returning or deleting the source.

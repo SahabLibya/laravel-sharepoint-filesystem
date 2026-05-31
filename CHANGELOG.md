@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-05-31
+
 ### Added
 - Added configurable Microsoft Graph copy monitor timeout and polling interval options.
 - Added mocked Pest tests for path encoding, prefixes, copy monitoring, move safety, pagination, and metadata timestamps.
@@ -52,5 +54,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Recursive directory listing support
 - Proper handling of Microsoft Graph API responses
 
-[Unreleased]: https://github.com/sahablibya/laravel-sharepoint-filesystem/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/sahablibya/laravel-sharepoint-filesystem/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/sahablibya/laravel-sharepoint-filesystem/compare/v1.0.1...v1.1.0
 [1.0.0]: https://github.com/sahablibya/laravel-sharepoint-filesystem/releases/tag/v1.0.0

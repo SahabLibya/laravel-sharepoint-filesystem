@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added Laravel 13 test matrix coverage for PHP 8.3, 8.4, and 8.5.
 - Added PHP 8.5 to the supported package PHP constraint.
 - Added CI handling for legacy Laravel 10 and 11 test lanes after Composer advisory blocking began rejecting those framework installs.
+- Added a feature test that resolves the `sharepoint` and `onedrive` disks through `Storage::extend()` to guard the driver registration on every supported Laravel version.
+
+### Fixed
+- Fixed a fatal `Call to undefined method` error when resolving a disk on Laravel 13. Laravel 13 rebinds `Storage::extend()` callbacks' `$this` (and scope) to the `FilesystemManager` via `Illuminate\Support\RebindsCallbacksToSelf`; the driver factories now capture the service provider explicitly instead of relying on `$this`.
 
 ## [1.1.0] - 2026-05-31
 

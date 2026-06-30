@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace SahabLibya\SharePointFilesystem;
 
+use Closure;
 use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -33,41 +34,36 @@ class SharePointFilesystemServiceProvider extends ServiceProvider
             __DIR__.'/../config/sharepoint-filesystem.php' => config_path('sharepoint-filesystem.php'),
         ], 'sharepoint-config');
 
-        Storage::extend('sharepoint', function ($app, $config) {
-            // Get access token using client credentials flow
-            $accessToken = $this->getAccessToken($config);
+        // Laravel 13 rebinds anonymous Storage::extend() callbacks to the
+        // FilesystemManager, so keep this callable targeted at the provider.
+        $createDriver = Closure::fromCallable([$this, 'createDriver']);
 
-            $adapter = new SharePointAdapter(
-                $accessToken,
-                $config['drive_id'] ?? null,
-                $config['prefix'] ?? '',
-                $this->adapterOptions($config)
-            );
-
-            return new FilesystemAdapter(
-                new Filesystem($adapter, $config),
-                $adapter,
-                $config
-            );
-        });
+        Storage::extend('sharepoint', $createDriver);
 
         // Also register as 'onedrive' for backward compatibility
-        Storage::extend('onedrive', function ($app, $config) {
-            $accessToken = $this->getAccessToken($config);
+        Storage::extend('onedrive', $createDriver);
+    }
 
-            $adapter = new SharePointAdapter(
-                $accessToken,
-                $config['drive_id'] ?? null,
-                $config['prefix'] ?? '',
-                $this->adapterOptions($config)
-            );
+    /**
+     * Create the SharePoint-backed Flysystem adapter.
+     */
+    private function createDriver($app, array $config): FilesystemAdapter
+    {
+        // Get access token using client credentials flow
+        $accessToken = $this->getAccessToken($config);
 
-            return new FilesystemAdapter(
-                new Filesystem($adapter, $config),
-                $adapter,
-                $config
-            );
-        });
+        $adapter = new SharePointAdapter(
+            $accessToken,
+            $config['drive_id'] ?? null,
+            $config['prefix'] ?? '',
+            $this->adapterOptions($config)
+        );
+
+        return new FilesystemAdapter(
+            new Filesystem($adapter, $config),
+            $adapter,
+            $config
+        );
     }
 
     /**

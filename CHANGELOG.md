@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-06-30
+
+### Added
+- Added Laravel 13 compatibility for the Illuminate filesystem, HTTP, and support packages.
+- Added Laravel 13 test matrix coverage for PHP 8.3, 8.4, and 8.5.
+- Added PHP 8.5 to the supported package PHP constraint.
+- Added CI handling for legacy Laravel 10 and 11 test lanes after Composer advisory blocking began rejecting those framework installs.
+
 ## [1.1.0] - 2026-05-31
 
 ### Added
@@ -54,6 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Recursive directory listing support
 - Proper handling of Microsoft Graph API responses
 
-[Unreleased]: https://github.com/sahablibya/laravel-sharepoint-filesystem/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/sahablibya/laravel-sharepoint-filesystem/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/sahablibya/laravel-sharepoint-filesystem/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/sahablibya/laravel-sharepoint-filesystem/compare/v1.0.1...v1.1.0
 [1.0.0]: https://github.com/sahablibya/laravel-sharepoint-filesystem/releases/tag/v1.0.0

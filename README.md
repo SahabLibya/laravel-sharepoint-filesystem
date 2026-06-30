@@ -12,7 +12,7 @@ A Laravel filesystem driver for SharePoint and OneDrive using Microsoft Graph AP
 - ✅ **SharePoint Document Libraries** - Direct access to your SharePoint sites
 - ✅ **OneDrive for Business** - Full OneDrive integration
 - ✅ **Automatic Token Refresh** - Handles token expiry seamlessly with smart caching
-- ✅ **Laravel 10, 11, 12** - Compatible with modern Laravel versions
+- ✅ **Laravel 10, 11, 12, 13** - Compatible with modern Laravel versions
 - ✅ **Flysystem v3** - Built on the latest Flysystem architecture
 - ✅ **Large File Support** - Optimized for files up to 250MB
 - ✅ **Safe Copy & Move** - Monitors Microsoft Graph copy jobs before completing moves
@@ -22,8 +22,8 @@ A Laravel filesystem driver for SharePoint and OneDrive using Microsoft Graph AP
 
 ## 📋 Requirements
 
-- PHP 8.1 or higher
-- Laravel 10.x, 11.x, or 12.x
+- PHP 8.1 or higher (Laravel 13 requires PHP 8.3+)
+- Laravel 10.x, 11.x, 12.x, or 13.x
 - Microsoft Azure app registration with appropriate permissions
 
 ## 📦 Installation

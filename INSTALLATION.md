@@ -148,10 +148,9 @@ For large files (>30MB), the package automatically sets a 5-minute timeout.
 ✅ Support for OneDrive for Business  
 ✅ Token caching (58 minutes)  
 ✅ Large file support (5-minute timeout)  
-✅ Compatible with Laravel 10, 11, 12  
+✅ Compatible with Laravel 10, 11, 12, 13  
 ✅ Works with Spatie Laravel Backup  
 
 ## Support
 
 For issues or questions, check the main README.md file.
-

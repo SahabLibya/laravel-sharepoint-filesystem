@@ -33,6 +33,18 @@ jobs:
             laravel: '12'
             illuminate: '^12.0'
             testbench: '^10.0'
+          - php: '8.3'
+            laravel: '13'
+            illuminate: '^13.0'
+            testbench: '^11.0'
+          - php: '8.4'
+            laravel: '13'
+            illuminate: '^13.0'
+            testbench: '^11.0'
+          - php: '8.5'
+            laravel: '13'
+            illuminate: '^13.0'
+            testbench: '^11.0'
 
     steps:
       - name: Checkout
@@ -44,6 +56,10 @@ jobs:
           php-version: ${{ matrix.php }}
           coverage: none
           tools: composer:v2
+
+      - name: Allow legacy Laravel advisory resolution
+        if: matrix.laravel == '10' || matrix.laravel == '11'
+        run: composer config policy.advisories.block false
 
       - name: Configure Laravel version
         run: |

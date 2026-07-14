@@ -82,6 +82,38 @@ Storage::disk('sharepoint')->delete('test.txt');
 echo "SharePoint integration successful!";
 ```
 
+## Personal OneDrive
+
+To connect a personal Microsoft account, register a Microsoft Entra public client that supports personal accounts, enable public client flows, and grant the delegated `Files.ReadWrite` permission.
+
+Configure `config/filesystems.php`:
+
+```php
+'onedrive' => [
+    'driver' => 'onedrive',
+    'auth_mode' => 'device_code',
+    'client_id' => env('ONEDRIVE_CLIENT_ID'),
+    'tenant_id' => 'consumers',
+    'token_key' => 'personal-backups',
+    'prefix' => env('ONEDRIVE_PREFIX', 'backups'),
+],
+```
+
+Only the public client ID is required in `.env`:
+
+```env
+ONEDRIVE_CLIENT_ID=your-public-application-client-id
+ONEDRIVE_PREFIX=backups
+```
+
+Then connect the account:
+
+```bash
+php artisan onedrive:connect
+```
+
+The refresh token is stored encrypted under `storage/app/onedrive-tokens`. Personal OneDrive does not require `GRAPH_CLIENT_SECRET`, `GRAPH_TENANT_ID`, or `ONEDRIVE_DRIVE_ID`.
+
 ## Using with Spatie Laravel Backup
 
 ### 1. Install Spatie Backup
@@ -99,7 +131,7 @@ In `config/backup.php`:
 'destination' => [
     'disks' => [
         'local',
-        'sharepoint',  // Add SharePoint
+        'onedrive', // Or "sharepoint" for an application-only disk
     ],
 ],
 ```
@@ -145,7 +177,7 @@ For large files (>30MB), the package automatically sets a 5-minute timeout.
 
 ✅ Automatic token management (no manual OAuth)  
 ✅ Support for SharePoint Document Libraries  
-✅ Support for OneDrive for Business  
+✅ Support for personal and business OneDrive
 ✅ Token caching (58 minutes)  
 ✅ Large file support (5-minute timeout)  
 ✅ Compatible with Laravel 10, 11, 12, 13  

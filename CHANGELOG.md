@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Added opt-in `device_code` authentication for personal and business OneDrive accounts while retaining client credentials as the default.
+- Added the `onedrive:connect` Artisan command for interactive Microsoft account consent.
+- Added encrypted delegated token storage with automatic access-token refresh and refresh-token rotation.
+- Added `ONEDRIVE_CLIENT_ID`, `ONEDRIVE_AUTH_MODE`, `ONEDRIVE_DRIVE_ID`, `ONEDRIVE_TOKEN_KEY`, and delegated scope configuration.
+- Added mocked tests for device authorization, encrypted token persistence, refresh behavior, and `/me/drive` uploads.
+
+### Fixed
+- Corrected the packaged OneDrive disk configuration to support `ONEDRIVE_DRIVE_ID` while retaining `SHAREPOINT_DRIVE_ID` as a fallback.
+
 ## [1.2.0] - 2026-06-30
 
 ### Added

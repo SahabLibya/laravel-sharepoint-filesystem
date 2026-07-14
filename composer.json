@@ -1,6 +1,6 @@
 {
     "name": "sahablibya/laravel-sharepoint-filesystem",
-    "description": "SharePoint/OneDrive filesystem driver for Laravel using Microsoft Graph API with client credentials authentication",
+    "description": "SharePoint/OneDrive filesystem driver for Laravel using Microsoft Graph API",
     "type": "library",
     "license": ["MIT"],
     "keywords": [
@@ -24,6 +24,8 @@
         "php": "^8.1|^8.2|^8.3|^8.4|^8.5",
         "guzzlehttp/guzzle": "^7.0",
         "guzzlehttp/psr7": "^2.0",
+        "illuminate/console": "^10.0|^11.0|^12.0|^13.0",
+        "illuminate/encryption": "^10.0|^11.0|^12.0|^13.0",
         "illuminate/filesystem": "^10.0|^11.0|^12.0|^13.0",
         "illuminate/http": "^10.0|^11.0|^12.0|^13.0",
         "illuminate/support": "^10.0|^11.0|^12.0|^13.0",

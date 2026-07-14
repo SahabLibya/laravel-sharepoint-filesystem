@@ -5,12 +5,19 @@ declare(strict_types=1);
 namespace SahabLibya\SharePointFilesystem;
 
 use Closure;
+use Illuminate\Contracts\Encryption\Encrypter;
+use Illuminate\Filesystem\Filesystem as IlluminateFilesystem;
 use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\ServiceProvider;
 use League\Flysystem\Filesystem;
+use RuntimeException;
+use SahabLibya\SharePointFilesystem\Authentication\DelegatedTokenStore;
+use SahabLibya\SharePointFilesystem\Authentication\DeviceCodeAccessTokenProvider;
+use SahabLibya\SharePointFilesystem\Authentication\EncryptedFileTokenStore;
+use SahabLibya\SharePointFilesystem\Console\ConnectOneDriveCommand;
 
 class SharePointFilesystemServiceProvider extends ServiceProvider
 {
@@ -23,6 +30,19 @@ class SharePointFilesystemServiceProvider extends ServiceProvider
             __DIR__.'/../config/sharepoint-filesystem.php',
             'sharepoint-filesystem'
         );
+
+        $this->app->singleton(DelegatedTokenStore::class, function ($app): DelegatedTokenStore {
+            $configuredPath = $app['config']->get('sharepoint-filesystem.token_storage_path');
+            $path = is_string($configuredPath) && $configuredPath !== ''
+                ? $configuredPath
+                : $app->storagePath('app/onedrive-tokens');
+
+            return new EncryptedFileTokenStore(
+                $app->make(IlluminateFilesystem::class),
+                $app->make(Encrypter::class),
+                $path,
+            );
+        });
     }
 
     /**
@@ -42,6 +62,10 @@ class SharePointFilesystemServiceProvider extends ServiceProvider
 
         // Also register as 'onedrive' for backward compatibility
         Storage::extend('onedrive', $createDriver);
+
+        if ($this->app->runningInConsole()) {
+            $this->commands([ConnectOneDriveCommand::class]);
+        }
     }
 
     /**
@@ -49,8 +73,7 @@ class SharePointFilesystemServiceProvider extends ServiceProvider
      */
     private function createDriver($app, array $config): FilesystemAdapter
     {
-        // Get access token using client credentials flow
-        $accessToken = $this->getAccessToken($config);
+        $accessToken = $this->resolveAccessToken($config);
 
         $adapter = new SharePointAdapter(
             $accessToken,
@@ -67,9 +90,26 @@ class SharePointFilesystemServiceProvider extends ServiceProvider
     }
 
     /**
+     * Resolve an access token without changing the existing default flow.
+     */
+    private function resolveAccessToken(array $config): string
+    {
+        $authMode = strtolower((string) ($config['auth_mode'] ?? 'client_credentials'));
+
+        return match ($authMode) {
+            'client_credentials' => $this->getClientCredentialsAccessToken($config),
+            'device_code' => $this->app->make(DeviceCodeAccessTokenProvider::class)
+                ->getAccessToken($config),
+            default => throw new RuntimeException(
+                "Unsupported SharePoint/OneDrive auth_mode [{$authMode}]."
+            ),
+        };
+    }
+
+    /**
      * Get access token using client credentials flow with caching
      */
-    private function getAccessToken(array $config): string
+    private function getClientCredentialsAccessToken(array $config): string
     {
         $cacheKey = 'sharepoint_access_token_'.md5(json_encode([
             $config['client_id'] ?? '',
@@ -84,7 +124,7 @@ class SharePointFilesystemServiceProvider extends ServiceProvider
             $tenantId = $config['tenant_id'] ?? 'common';
 
             if (! $clientId || ! $clientSecret) {
-                throw new \RuntimeException(
+                throw new RuntimeException(
                     'SharePoint/OneDrive credentials not configured. '.
                     'Set GRAPH_CLIENT_ID and GRAPH_CLIENT_SECRET in your .env file.'
                 );
@@ -101,7 +141,7 @@ class SharePointFilesystemServiceProvider extends ServiceProvider
             );
 
             if ($response->failed()) {
-                throw new \RuntimeException('Failed to obtain SharePoint access token: '.$response->body());
+                throw new RuntimeException('Failed to obtain SharePoint access token: '.$response->body());
             }
 
             $data = $response->json();

@@ -4,13 +4,13 @@
 [![Total Downloads](https://img.shields.io/packagist/dt/sahablibya/laravel-sharepoint-filesystem.svg?style=flat-square)](https://packagist.org/packages/sahablibya/laravel-sharepoint-filesystem)
 [![License](https://img.shields.io/packagist/l/sahablibya/laravel-sharepoint-filesystem.svg?style=flat-square)](https://packagist.org/packages/sahablibya/laravel-sharepoint-filesystem)
 
-A Laravel filesystem driver for SharePoint and OneDrive using Microsoft Graph API with **client credentials authentication**. No manual OAuth flows required - perfect for server-side applications and automated backups.
+A Laravel filesystem driver for SharePoint and OneDrive using Microsoft Graph API. It supports client credentials for unattended SharePoint and OneDrive for Business access, plus device-code sign-in for personal and business OneDrive accounts.
 
 ## ✨ Features
 
-- ✅ **Zero-configuration OAuth** - Automatic token management with client credentials flow
+- ✅ **Application-only OAuth** - Automatic token management with client credentials flow
 - ✅ **SharePoint Document Libraries** - Direct access to your SharePoint sites
-- ✅ **OneDrive for Business** - Full OneDrive integration
+- ✅ **Personal and Business OneDrive** - Connect a Microsoft account with device-code sign-in
 - ✅ **Automatic Token Refresh** - Handles token expiry seamlessly with smart caching
 - ✅ **Laravel 10, 11, 12, 13** - Compatible with modern Laravel versions
 - ✅ **Flysystem v3** - Built on the latest Flysystem architecture
@@ -24,7 +24,7 @@ A Laravel filesystem driver for SharePoint and OneDrive using Microsoft Graph AP
 
 - PHP 8.1 or higher (Laravel 13 requires PHP 8.3+)
 - Laravel 10.x, 11.x, 12.x, or 13.x
-- Microsoft Azure app registration with appropriate permissions
+- Microsoft Entra app registration with appropriate permissions
 
 ## 📦 Installation
 
@@ -65,7 +65,7 @@ The service provider will be automatically registered via Laravel's package disc
 4. Click **Grant admin consent** (requires admin privileges)
 5. Wait 2-5 minutes for permissions to propagate
 
-### Step 4: Get SharePoint Drive ID (Optional)
+### Step 4: Get SharePoint Drive ID
 
 To use a specific SharePoint document library, you need the drive ID:
 
@@ -93,7 +93,7 @@ GRAPH_CLIENT_ID=your-application-client-id
 GRAPH_CLIENT_SECRET=your-client-secret-value
 GRAPH_TENANT_ID=your-tenant-id
 
-# Optional: Specify a SharePoint document library
+# Required: Specify the SharePoint document library
 SHAREPOINT_DRIVE_ID=your-drive-id
 
 # Optional: Prefix path within the drive
@@ -117,7 +117,7 @@ Add the SharePoint disk to your `config/filesystems.php`:
         'client_id' => env('GRAPH_CLIENT_ID'),
         'client_secret' => env('GRAPH_CLIENT_SECRET'),
         'tenant_id' => env('GRAPH_TENANT_ID', 'common'),
-        'drive_id' => env('SHAREPOINT_DRIVE_ID'), // Optional
+        'drive_id' => env('SHAREPOINT_DRIVE_ID'),
         'prefix' => env('SHAREPOINT_PREFIX', ''), // Optional
         'copy_monitor_timeout' => env('SHAREPOINT_COPY_MONITOR_TIMEOUT', 300),
         'copy_monitor_interval_ms' => env('SHAREPOINT_COPY_MONITOR_INTERVAL_MS', 1000),
@@ -125,6 +125,50 @@ Add the SharePoint disk to your `config/filesystems.php`:
     ],
 ],
 ```
+
+## Personal OneDrive
+
+Personal OneDrive uses delegated device-code authentication. The Microsoft account owner signs in once, and the package stores the resulting refresh token encrypted with Laravel's `APP_KEY`.
+
+### Register a Public Client
+
+1. Create a Microsoft Entra app registration.
+2. Select an account type that includes **personal Microsoft accounts**.
+3. Under **Authentication** → **Advanced settings**, enable **Allow public client flows**.
+4. Add the Microsoft Graph delegated permission `Files.ReadWrite`.
+5. Copy the **Application (client) ID**.
+
+A client secret, tenant ID, and drive ID are not required for this mode. Microsoft still requires a public client ID to identify the application; the system owner can configure that value once for all users of the system.
+
+### Configure the Disk
+
+```env
+ONEDRIVE_AUTH_MODE=device_code
+ONEDRIVE_CLIENT_ID=your-public-application-client-id
+ONEDRIVE_PREFIX=backups
+```
+
+Add the disk to `config/filesystems.php`:
+
+```php
+'onedrive' => [
+    'driver' => 'onedrive',
+    'auth_mode' => 'device_code',
+    'client_id' => env('ONEDRIVE_CLIENT_ID'),
+    'tenant_id' => 'consumers', // Use "common" to also allow work accounts
+    'token_key' => 'personal-backups',
+    'prefix' => env('ONEDRIVE_PREFIX', 'backups'),
+    'throw' => false,
+],
+```
+
+Connect the account once:
+
+```bash
+php artisan onedrive:connect
+```
+
+The command displays a Microsoft URL and code. After sign-in, scheduled backups can refresh their access token without user interaction. Tokens are encrypted under `storage/app/onedrive-tokens` by default. Set a unique `token_key` for each OneDrive account when configuring multiple disks.
 
 ## 🚀 Usage
 
@@ -222,7 +266,7 @@ Perfect integration with [Spatie Laravel Backup](https://github.com/spatie/larav
 'destination' => [
     'disks' => [
         'local',
-        'sharepoint',  // Add SharePoint as backup destination
+        'onedrive', // Or "sharepoint" for an application-only disk
     ],
 ],
 ```
@@ -271,21 +315,23 @@ php artisan backup:clean
 
 ### Using OneDrive
 
-The package also supports OneDrive for Business. Use the `onedrive` driver:
+For application-only OneDrive for Business access, use the existing client credentials mode and provide the user's drive ID:
 
 ```php
 'onedrive' => [
     'driver' => 'onedrive',
+    'auth_mode' => 'client_credentials',
     'client_id' => env('GRAPH_CLIENT_ID'),
     'client_secret' => env('GRAPH_CLIENT_SECRET'),
     'tenant_id' => env('GRAPH_TENANT_ID'),
+    'drive_id' => env('ONEDRIVE_DRIVE_ID'),
     'prefix' => env('ONEDRIVE_PREFIX', ''),
 ],
 ```
 
 ### Token Caching
 
-Access tokens are automatically cached for 58 minutes (tokens typically expire in 60 minutes). The cache key is unique per disk configuration, allowing multiple SharePoint/OneDrive connections with independent token management.
+Client-credentials access tokens are cached for 58 minutes. Device-code connections store an encrypted refresh token and request a new access token when the current token is close to expiry.
 
 ### Copy Monitoring
 
@@ -320,15 +366,18 @@ You can tune the monitor wait behavior per disk:
 3. Check `GRAPH_TENANT_ID` matches your Directory (tenant) ID
 4. Ensure no extra spaces in your `.env` file
 
+For a device-code disk, run `php artisan onedrive:connect {disk}` again if Microsoft access was revoked, the refresh token expired, or Laravel's `APP_KEY` changed.
+
 ### Drive Not Found
 
 **Error:** "itemNotFound" or "Resource not found"
 
 **Solutions:**
 1. Verify `SHAREPOINT_DRIVE_ID` is correct
-2. Try removing `drive_id` to use the default OneDrive
-3. Ensure the app has access to the specified drive
-4. Check the drive exists and hasn't been deleted
+2. For application-only OneDrive, verify `ONEDRIVE_DRIVE_ID` is configured
+3. Omit `drive_id` only when using device-code authentication, which uses `/me/drive`
+4. Ensure the app has access to the specified drive
+5. Check the drive exists and hasn't been deleted
 
 ### Timeout Issues
 
@@ -393,6 +442,7 @@ Route::get('/test-sharepoint', function () {
 4. **Monitor access logs** - Review app activity in Azure Portal regularly
 5. **Principle of least privilege** - Only grant necessary permissions
 6. **Secure your `.env`** - Restrict file permissions: `chmod 600 .env`
+7. **Protect `APP_KEY`** - Delegated refresh tokens are encrypted with the Laravel application key
 
 ## 📚 API Reference
 

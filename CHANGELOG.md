@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-07-14
+
 ### Added
 - Added opt-in `device_code` authentication for personal and business OneDrive accounts while retaining client credentials as the default.
 - Added the `onedrive:connect` Artisan command for interactive Microsoft account consent.
@@ -76,7 +78,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Recursive directory listing support
 - Proper handling of Microsoft Graph API responses
 
-[Unreleased]: https://github.com/sahablibya/laravel-sharepoint-filesystem/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/sahablibya/laravel-sharepoint-filesystem/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/sahablibya/laravel-sharepoint-filesystem/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/sahablibya/laravel-sharepoint-filesystem/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/sahablibya/laravel-sharepoint-filesystem/compare/v1.0.1...v1.1.0
 [1.0.0]: https://github.com/sahablibya/laravel-sharepoint-filesystem/releases/tag/v1.0.0

@@ -22,6 +22,7 @@ return [
             'client_secret' => env('GRAPH_CLIENT_SECRET'),
             'tenant_id' => env('GRAPH_TENANT_ID', 'common'),
             'drive_id' => env('SHAREPOINT_DRIVE_ID'),
+            'root_item_id' => env('SHAREPOINT_ROOT_ITEM_ID'),
             'prefix' => env('SHAREPOINT_PREFIX', ''),
             'copy_monitor_timeout' => env('SHAREPOINT_COPY_MONITOR_TIMEOUT', 300),
             'copy_monitor_interval_ms' => env('SHAREPOINT_COPY_MONITOR_INTERVAL_MS', 1000),
@@ -35,6 +36,7 @@ return [
             'client_secret' => env('GRAPH_CLIENT_SECRET'),
             'tenant_id' => env('ONEDRIVE_TENANT_ID', env('GRAPH_TENANT_ID', 'common')),
             'drive_id' => env('ONEDRIVE_DRIVE_ID', env('SHAREPOINT_DRIVE_ID')),
+            'root_item_id' => env('ONEDRIVE_ROOT_ITEM_ID'),
             'prefix' => env('ONEDRIVE_PREFIX', ''),
             'token_key' => env('ONEDRIVE_TOKEN_KEY', 'default'),
             'scopes' => array_values(array_filter(explode(

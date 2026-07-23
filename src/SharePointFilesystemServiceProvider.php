@@ -158,6 +158,7 @@ class SharePointFilesystemServiceProvider extends ServiceProvider
         return [
             'copy_monitor_timeout' => $config['copy_monitor_timeout'] ?? 300,
             'copy_monitor_interval_ms' => $config['copy_monitor_interval_ms'] ?? 1000,
+            'root_item_id' => $config['root_item_id'] ?? null,
         ];
     }
 }

@@ -98,6 +98,42 @@ it('uses a connected personal OneDrive through me drive without app credentials'
     });
 });
 
+it('passes a configured root item through the Laravel filesystem driver', function () {
+    config()->set('filesystems.disks.sharepoint_root_item_test', [
+        'driver' => 'sharepoint',
+        'auth_mode' => 'client_credentials',
+        'client_id' => 'root-item-client-id',
+        'client_secret' => 'client-secret',
+        'tenant_id' => 'root-item-tenant-id',
+        'drive_id' => 'drive-id',
+        'root_item_id' => 'root-item-id',
+        'prefix' => '',
+        'throw' => true,
+    ]);
+
+    $tokenUrl = 'https://login.microsoftonline.com/root-item-tenant-id/oauth2/v2.0/token';
+    $uploadUrl = 'https://graph.microsoft.com/v1.0/drives/drive-id/items/root-item-id:/fssi-backup/example.zip:/content';
+
+    Http::fake([
+        $tokenUrl => Http::response([
+            'access_token' => 'application-access-token',
+            'expires_in' => 3600,
+        ], 200),
+        $uploadUrl => Http::response(['id' => 'uploaded-item'], 201),
+        '*' => Http::response('unexpected request', 500),
+    ]);
+
+    Storage::disk('sharepoint_root_item_test')->put(
+        'fssi-backup/example.zip',
+        'backup contents',
+    );
+
+    Http::assertSent(fn (Request $request): bool => $request->method() === 'PUT'
+        && $request->url() === $uploadUrl
+        && $request->hasHeader('Authorization', 'Bearer application-access-token')
+    );
+});
+
 it('wires the default encrypted delegated token store into Laravel', function () {
     $directory = sys_get_temp_dir().'/onedrive-binding-test-'.bin2hex(random_bytes(6));
     config()->set('app.key', 'base64:'.base64_encode(random_bytes(32)));

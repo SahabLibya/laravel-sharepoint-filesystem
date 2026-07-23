@@ -10,6 +10,7 @@ A Laravel filesystem driver for SharePoint and OneDrive using Microsoft Graph AP
 
 - ✅ **Application-only OAuth** - Automatic token management with client credentials flow
 - ✅ **SharePoint Document Libraries** - Direct access to your SharePoint sites
+- ✅ **Folder Virtual Roots** - Mount a Microsoft Graph driveItem folder as the disk root
 - ✅ **Personal and Business OneDrive** - Connect a Microsoft account with device-code sign-in
 - ✅ **Automatic Token Refresh** - Handles token expiry seamlessly with smart caching
 - ✅ **Laravel 10, 11, 12, 13** - Compatible with modern Laravel versions
@@ -59,13 +60,15 @@ The service provider will be automatically registered via Laravel's package disc
 
 1. Go to **API permissions**
 2. Click **Add a permission** → **Microsoft Graph** → **Application permissions**
-3. Add these permissions:
-   - `Files.ReadWrite.All` - Read and write files in all site collections
-   - `Sites.ReadWrite.All` - Read and write items in all site collections
+3. Choose the permission model that matches your deployment:
+   - For folder-scoped access, add `Files.SelectedOperations.Selected`
+   - For broad access, `Files.ReadWrite.All` or `Sites.ReadWrite.All` can be used
 4. Click **Grant admin consent** (requires admin privileges)
-5. Wait 2-5 minutes for permissions to propagate
+5. If using `Files.SelectedOperations.Selected`, explicitly assign the application the `write` role on the target driveItem
 
-### Step 4: Get SharePoint Drive ID
+See [Folder-scoped application permissions](#folder-scoped-application-permissions) for the complete selected-permissions setup.
+
+### Step 4: Get SharePoint Drive ID and Optional Folder Item ID
 
 To use a specific SharePoint document library, you need the drive ID:
 
@@ -84,6 +87,14 @@ Connect-PnPOnline -Url "https://yourtenant.sharepoint.com/sites/yoursite"
 Get-PnPList | Where-Object {$_.BaseTemplate -eq 101}
 ```
 
+To mount one folder instead of the whole drive, also retrieve that folder's Microsoft Graph driveItem `id`. Configure this value as `root_item_id`; in this package's configuration it is the **Parent Folder Item ID** returned by Microsoft Graph.
+
+For example, resolve a folder by path and copy the `id` from the response:
+
+```http
+GET https://graph.microsoft.com/v1.0/drives/{drive-id}/root:/Backups
+```
+
 ### Step 5: Environment Configuration
 
 Add these variables to your `.env` file:
@@ -95,6 +106,9 @@ GRAPH_TENANT_ID=your-tenant-id
 
 # Required: Specify the SharePoint document library
 SHAREPOINT_DRIVE_ID=your-drive-id
+
+# Optional: Mount this Parent Folder Item ID as the virtual disk root
+SHAREPOINT_ROOT_ITEM_ID=your-folder-drive-item-id
 
 # Optional: Prefix path within the drive
 SHAREPOINT_PREFIX=backups
@@ -118,6 +132,7 @@ Add the SharePoint disk to your `config/filesystems.php`:
         'client_secret' => env('GRAPH_CLIENT_SECRET'),
         'tenant_id' => env('GRAPH_TENANT_ID', 'common'),
         'drive_id' => env('SHAREPOINT_DRIVE_ID'),
+        'root_item_id' => env('SHAREPOINT_ROOT_ITEM_ID'), // Optional Parent Folder Item ID
         'prefix' => env('SHAREPOINT_PREFIX', ''), // Optional
         'copy_monitor_timeout' => env('SHAREPOINT_COPY_MONITOR_TIMEOUT', 300),
         'copy_monitor_interval_ms' => env('SHAREPOINT_COPY_MONITOR_INTERVAL_MS', 1000),
@@ -145,6 +160,7 @@ A client secret, tenant ID, and drive ID are not required for this mode. Microso
 ```env
 ONEDRIVE_AUTH_MODE=device_code
 ONEDRIVE_CLIENT_ID=your-public-application-client-id
+ONEDRIVE_ROOT_ITEM_ID=your-folder-drive-item-id
 ONEDRIVE_PREFIX=backups
 ```
 
@@ -157,6 +173,7 @@ Add the disk to `config/filesystems.php`:
     'client_id' => env('ONEDRIVE_CLIENT_ID'),
     'tenant_id' => 'consumers', // Use "common" to also allow work accounts
     'token_key' => 'personal-backups',
+    'root_item_id' => env('ONEDRIVE_ROOT_ITEM_ID'),
     'prefix' => env('ONEDRIVE_PREFIX', 'backups'),
     'throw' => false,
 ],
@@ -169,6 +186,83 @@ php artisan onedrive:connect
 ```
 
 The command displays a Microsoft URL and code. After sign-in, scheduled backups can refresh their access token without user interaction. Tokens are encrypted under `storage/app/onedrive-tokens` by default. Set a unique `token_key` for each OneDrive account when configuring multiple disks.
+
+## Mount a Folder as the Disk Root
+
+Set `root_item_id` to a folder's Microsoft Graph driveItem ID to mount that folder as the virtual root of the Flysystem disk:
+
+```php
+'sharepoint' => [
+    'driver' => 'sharepoint',
+    'auth_mode' => 'client_credentials',
+    'client_id' => env('GRAPH_CLIENT_ID'),
+    'client_secret' => env('GRAPH_CLIENT_SECRET'),
+    'tenant_id' => env('GRAPH_TENANT_ID'),
+    'drive_id' => env('SHAREPOINT_DRIVE_ID'),
+    'root_item_id' => env('SHAREPOINT_ROOT_ITEM_ID'),
+    'prefix' => env('SHAREPOINT_PREFIX', ''),
+    'throw' => true,
+],
+```
+
+```env
+SHAREPOINT_DRIVE_ID=b!...
+SHAREPOINT_ROOT_ITEM_ID=01...
+SHAREPOINT_PREFIX=
+```
+
+`root_item_id` is the **Parent Folder Item ID** returned by Microsoft Graph. Logical disk paths are resolved below that item. A configured `prefix` is then applied inside the item root; it is not a physical path above the item.
+
+For example:
+
+```php
+Storage::disk('sharepoint')->put(
+    'fssi-backup/example.zip',
+    'backup contents',
+);
+```
+
+uses:
+
+```http
+PUT /drives/{driveId}/items/{rootItemId}:/fssi-backup/example.zip:/content
+```
+
+This is Microsoft Graph's [upload by parent item ID](https://learn.microsoft.com/en-us/graph/api/driveitem-put-content?view=graph-rest-1.0) request form.
+
+With delegated authentication and no `drive_id`, the equivalent path starts with `/me/drive/items/{rootItemId}`. If `root_item_id` is omitted, the package retains its existing `/drives/{driveId}/root` or `/me/drive/root` routing.
+
+An empty logical path addresses the mounted item itself (or the configured prefix beneath it). For safety, the adapter refuses to delete or move a configured item root through an empty logical path.
+
+### Folder-scoped application permissions
+
+`root_item_id` changes Microsoft Graph routing only; it does not grant the application access to the folder.
+
+For app-only folder-scoped access with client credentials, the Microsoft Entra application needs all of the following:
+
+1. Microsoft Graph `Files.SelectedOperations.Selected` as an **Application** permission.
+2. Administrator consent for that application permission.
+3. An explicit `write` permission assignment for the application on the target driveItem.
+
+Create the resource assignment using an appropriately authorized administrator process:
+
+```http
+POST /drives/{driveId}/items/{rootItemId}/permissions
+Content-Type: application/json
+
+{
+    "grantedToV2": {
+        "application": {
+            "id": "{applicationClientId}"
+        }
+    },
+    "roles": ["write"]
+}
+```
+
+Selected permissions grant no access until the resource assignment is created. See Microsoft's [Selected permissions overview](https://learn.microsoft.com/en-us/graph/permissions-selected-overview) and [create permission on a driveItem](https://learn.microsoft.com/en-us/graph/api/driveitem-post-permissions?view=graph-rest-1.0) documentation.
+
+A signed-in user's personal permission on the folder does not transfer to a client-credentials token, because app-only access is evaluated for the application rather than a user. Broader application permissions such as `Files.ReadWrite.All` or `Sites.ReadWrite.All` can also work, but they are unnecessary when folder-scoped selected permissions and the explicit driveItem assignment are configured correctly.
 
 ## 🚀 Usage
 
@@ -325,6 +419,7 @@ For application-only OneDrive for Business access, use the existing client crede
     'client_secret' => env('GRAPH_CLIENT_SECRET'),
     'tenant_id' => env('GRAPH_TENANT_ID'),
     'drive_id' => env('ONEDRIVE_DRIVE_ID'),
+    'root_item_id' => env('ONEDRIVE_ROOT_ITEM_ID'),
     'prefix' => env('ONEDRIVE_PREFIX', ''),
 ],
 ```
@@ -351,10 +446,11 @@ You can tune the monitor wait behavior per disk:
 **Error:** "Access denied" or "403 Forbidden"
 
 **Solutions:**
-1. Verify `Files.ReadWrite.All` and `Sites.ReadWrite.All` permissions are added
+1. Verify the configured permission model: `Files.SelectedOperations.Selected`, `Files.ReadWrite.All`, or `Sites.ReadWrite.All`
 2. Ensure **admin consent is granted** (look for green checkmarks in Azure Portal)
-3. Wait 2-5 minutes after granting consent for changes to propagate
-4. Clear Laravel cache: `php artisan cache:clear`
+3. For selected permissions, verify the application has an explicit `write` assignment on the target driveItem
+4. Verify `SHAREPOINT_ROOT_ITEM_ID` or `ONEDRIVE_ROOT_ITEM_ID` is the target folder's driveItem ID
+5. Wait for permission changes to propagate, then clear Laravel cache: `php artisan cache:clear`
 
 ### Authentication Errors
 

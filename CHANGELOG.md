@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Added optional `root_item_id` support for mounting a Microsoft Graph driveItem folder as the virtual root of SharePoint and OneDrive disks.
+- Added `SHAREPOINT_ROOT_ITEM_ID` and `ONEDRIVE_ROOT_ITEM_ID` to the published package configuration.
+- Added mocked coverage for item-root routing, prefixes, path encoding, content and metadata operations, recursive listings, pagination, copy and move containment, `/me/drive`, and Laravel `Storage` integration.
+- Documented folder-scoped `Files.SelectedOperations.Selected` application permissions and explicit driveItem permission assignments.
+
+### Fixed
+- Prevented virtual-root listings from exposing physical parent paths or configured prefixes.
+- Prevented empty logical paths from deleting or moving a configured item root.
+- Preserved all recursive listing entries when nested generators use overlapping numeric keys.
+
 ## [1.3.0] - 2026-07-14
 
 ### Added

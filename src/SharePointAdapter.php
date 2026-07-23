@@ -33,6 +33,8 @@ class SharePointAdapter implements FilesystemAdapter
 
     private int $copyMonitorIntervalMs;
 
+    private ?string $rootItemId;
+
     public function __construct(
         private string $accessToken,
         private ?string $driveId = null,
@@ -42,6 +44,10 @@ class SharePointAdapter implements FilesystemAdapter
         $this->prefixer = new PathPrefixer($prefix);
         $this->copyMonitorTimeout = max(1, (int) ($options['copy_monitor_timeout'] ?? 300));
         $this->copyMonitorIntervalMs = max(0, (int) ($options['copy_monitor_interval_ms'] ?? 1000));
+        $configuredRootItemId = $options['root_item_id'] ?? null;
+        $this->rootItemId = is_string($configuredRootItemId) && trim($configuredRootItemId) !== ''
+            ? trim($configuredRootItemId)
+            : null;
     }
 
     public function fileExists(string $path): bool
@@ -143,6 +149,8 @@ class SharePointAdapter implements FilesystemAdapter
     public function delete(string $path): void
     {
         try {
+            $this->guardItemRootMutation($path, 'delete');
+
             $endpoint = $this->baseUrl.$this->driveItemPath($path);
             $response = Http::withToken($this->accessToken)
                 ->delete($endpoint);
@@ -158,6 +166,8 @@ class SharePointAdapter implements FilesystemAdapter
     public function deleteDirectory(string $path): void
     {
         try {
+            $this->guardItemRootMutation($path, 'delete');
+
             $endpoint = $this->baseUrl.$this->driveItemPath($path);
             $response = Http::withToken($this->accessToken)
                 ->delete($endpoint);
@@ -249,7 +259,7 @@ class SharePointAdapter implements FilesystemAdapter
                 $items = $payload['value'] ?? [];
 
                 foreach ($items as $item) {
-                    $itemPath = $this->pathFromListItem($item);
+                    $itemPath = $this->pathFromListItem($item, $path);
 
                     if (isset($item['folder'])) {
                         yield new DirectoryAttributes(
@@ -259,7 +269,9 @@ class SharePointAdapter implements FilesystemAdapter
                         );
 
                         if ($deep) {
-                            yield from $this->listContents($itemPath, true);
+                            foreach ($this->listContents($itemPath, true) as $nestedItem) {
+                                yield $nestedItem;
+                            }
                         }
 
                         continue;
@@ -284,6 +296,9 @@ class SharePointAdapter implements FilesystemAdapter
     public function move(string $source, string $destination, Config $config): void
     {
         try {
+            $this->guardItemRootMutation($source, 'move');
+            $this->guardItemRootMutation($destination, 'move to');
+
             $this->copy($source, $destination, $config);
             $this->delete($source);
         } catch (Throwable $exception) {
@@ -352,11 +367,15 @@ class SharePointAdapter implements FilesystemAdapter
 
     private function driveRootPath(): string
     {
-        if ($this->driveId) {
-            return "/drives/{$this->driveId}/root";
+        $drivePath = $this->driveId
+            ? "/drives/{$this->driveId}"
+            : '/me/drive';
+
+        if ($this->rootItemId !== null) {
+            return $drivePath.'/items/'.rawurlencode($this->rootItemId);
         }
 
-        return '/me/drive/root';
+        return $drivePath.'/root';
     }
 
     private function driveItemPath(string $path, bool $pathIsPrefixed = false): string
@@ -485,8 +504,17 @@ class SharePointAdapter implements FilesystemAdapter
         return 'the Microsoft Graph copy monitor reported failure.';
     }
 
-    private function pathFromListItem(array $item): string
+    private function pathFromListItem(array $item, string $listedPath): string
     {
+        if ($this->rootItemId !== null) {
+            $logicalParentPath = $this->normalizePath($listedPath);
+            $itemName = $this->normalizePath((string) ($item['name'] ?? ''));
+
+            return $logicalParentPath === ''
+                ? $itemName
+                : $logicalParentPath.'/'.$itemName;
+        }
+
         $parentPath = $item['parentReference']['path'] ?? '';
         $itemName = $item['name'] ?? '';
 
@@ -498,6 +526,15 @@ class SharePointAdapter implements FilesystemAdapter
         }
 
         return $this->prefixer->stripPrefix($this->normalizePath($itemPath));
+    }
+
+    private function guardItemRootMutation(string $path, string $operation): void
+    {
+        if ($this->rootItemId !== null && $this->normalizePath($path) === '') {
+            throw new RuntimeException(
+                "Cannot {$operation} the configured root item using an empty logical path."
+            );
+        }
     }
 
     private function lastModifiedTimestamp(array $metadata): ?int

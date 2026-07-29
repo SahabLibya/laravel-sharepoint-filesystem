@@ -8,16 +8,13 @@ use Closure;
 use Illuminate\Contracts\Encryption\Encrypter;
 use Illuminate\Filesystem\Filesystem as IlluminateFilesystem;
 use Illuminate\Filesystem\FilesystemAdapter;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\ServiceProvider;
 use League\Flysystem\Filesystem;
-use RuntimeException;
 use SahabLibya\SharePointFilesystem\Authentication\DelegatedTokenStore;
-use SahabLibya\SharePointFilesystem\Authentication\DeviceCodeAccessTokenProvider;
 use SahabLibya\SharePointFilesystem\Authentication\EncryptedFileTokenStore;
 use SahabLibya\SharePointFilesystem\Console\ConnectOneDriveCommand;
+use SahabLibya\SharePointFilesystem\Graph\GraphTokenProvider;
 
 class SharePointFilesystemServiceProvider extends ServiceProvider
 {
@@ -43,6 +40,8 @@ class SharePointFilesystemServiceProvider extends ServiceProvider
                 $path,
             );
         });
+
+        $this->app->singleton(GraphTokenProvider::class);
     }
 
     /**
@@ -94,60 +93,7 @@ class SharePointFilesystemServiceProvider extends ServiceProvider
      */
     private function resolveAccessToken(array $config): string
     {
-        $authMode = strtolower((string) ($config['auth_mode'] ?? 'client_credentials'));
-
-        return match ($authMode) {
-            'client_credentials' => $this->getClientCredentialsAccessToken($config),
-            'device_code' => $this->app->make(DeviceCodeAccessTokenProvider::class)
-                ->getAccessToken($config),
-            default => throw new RuntimeException(
-                "Unsupported SharePoint/OneDrive auth_mode [{$authMode}]."
-            ),
-        };
-    }
-
-    /**
-     * Get access token using client credentials flow with caching
-     */
-    private function getClientCredentialsAccessToken(array $config): string
-    {
-        $cacheKey = 'sharepoint_access_token_'.md5(json_encode([
-            $config['client_id'] ?? '',
-            $config['tenant_id'] ?? 'common',
-            $config['drive_id'] ?? '',
-        ]));
-
-        // Cache for 58 minutes (tokens usually expire in 60 minutes)
-        return Cache::remember($cacheKey, 3500, function () use ($config) {
-            $clientId = $config['client_id'] ?? null;
-            $clientSecret = $config['client_secret'] ?? null;
-            $tenantId = $config['tenant_id'] ?? 'common';
-
-            if (! $clientId || ! $clientSecret) {
-                throw new RuntimeException(
-                    'SharePoint/OneDrive credentials not configured. '.
-                    'Set GRAPH_CLIENT_ID and GRAPH_CLIENT_SECRET in your .env file.'
-                );
-            }
-
-            $response = Http::asForm()->post(
-                "https://login.microsoftonline.com/{$tenantId}/oauth2/v2.0/token",
-                [
-                    'client_id' => $clientId,
-                    'client_secret' => $clientSecret,
-                    'scope' => 'https://graph.microsoft.com/.default',
-                    'grant_type' => 'client_credentials',
-                ]
-            );
-
-            if ($response->failed()) {
-                throw new RuntimeException('Failed to obtain SharePoint access token: '.$response->body());
-            }
-
-            $data = $response->json();
-
-            return $data['access_token'];
-        });
+        return $this->app->make(GraphTokenProvider::class)->tokenFor($config);
     }
 
     /**

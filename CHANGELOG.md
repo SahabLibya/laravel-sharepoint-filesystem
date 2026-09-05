@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Added `Graph\AccessTokenProvider` and `Graph\GraphTokenProvider` as an injectable surface for resolving Microsoft Graph access tokens outside the Flysystem adapter.
+- Added mocked coverage documenting the current copy-monitor throttling failure, retained error details, and source preservation during a failed move. Retry behavior is unchanged.
+
+### Documentation
+- Explained mounted-root, disk-prefix, backup-name, and filename composition with single-folder and nested-folder examples.
+- Corrected Spatie Backup configuration nesting and added complete single-project and shared-root multi-project recipes with matching monitoring names.
+- Replaced the public test route and fixed-name connection checks with an opt-in console upload/read-back/cleanup example.
+- Expanded troubleshooting for project selection, resolved configuration, cache refresh, visible exceptions, operation-specific failures, and the unresolved v1.4.0 copy incident.
+- Recorded a bounded copy-monitor retry follow-up and a `sharepoint:check --write-test` command as proposals, without changing runtime behavior.
+
 ## [1.4.0] - 2026-07-23
 
 ### Added
